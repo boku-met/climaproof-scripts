@@ -15,7 +15,7 @@ So there is only reason to use these scripts if you have customised the climate 
 ## Step 1: Download the scripts
 If you already know which indicator you want to calculate, you have several options of downloading the scripts:
 
-- Click on the name of the script you are interested in and copy the code into an empty text file. You can then save the file under "<myname>.py"
+- Click on the name of the script you are interested in and copy the code into an empty text file. You can then save the file under "name_of_the_script.py"
 - Download all scripts by clicking on the green "Code" icon, and then "Download ZIP"
 - If you have git installed on your local machine, you can clone this repository with "git clone https://github.com/boku-met/climaproof-scripts.git"
   
