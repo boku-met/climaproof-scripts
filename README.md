@@ -41,17 +41,17 @@ Always check that the user info is correct before you run the scripts.
 ## Step 5: Run the scrips
 When you have the conda environment installed (Step 2), running the scripts is straightforward. In the command line, type
 
-conda activate tools (or user-defined name of the ClimaProof environment)
-python name_of_the_script.py
+    conda activate tools (or user-defined name of the ClimaProof environment)
+    python name_of_the_script.py
 
 The scripts produce some text output. If you want to avoid the text in your command line, you can direct the output to a text file:
 
-python name_of_the_script.py > name_of_textfile.txt
+    python name_of_the_script.py > name_of_textfile.txt
 
 The scripts can take some time if they need to process large files. You can also run the programme in the background (Linux and MacOS only):
 
-python name_of_the_script.py &
-python name_of_the_script.py > name_of_textfile.txt &
+    python name_of_the_script.py &
+    python name_of_the_script.py > name_of_textfile.txt &
 
 For a hint how to run the scripts in the background under Windows, see
 https://superuser.com/questions/198525/how-can-i-execute-a-windows-command-line-in-background
