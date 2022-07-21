@@ -17,7 +17,8 @@ If you already know which indicator you want to calculate, you have several opti
 
 - Click on the name of the script you are interested in and copy the code into an empty text file. You can then save the file under "name_of_the_script.py"
 - Download all scripts by clicking on the green "Code" icon, and then "Download ZIP"
-- If you have git installed on your local machine, you can clone this repository with "git clone https://github.com/boku-met/climaproof-scripts.git"
+- If you have git installed on your local machine, you can clone this repository with 
+    git clone https://github.com/boku-met/climaproof-scripts.git"
   
 ## Step 2: Setting up the environment
 The scipts are developed to run under the same conda environment as the ClimaProof tools. So if you already set up the environment described in the chapter "Installing the Python environment" in the "Handbook_UserGuide" (https://github.com/boku-met/climaproof-docs) you are good to go. If not, please do so. 
