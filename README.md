@@ -19,8 +19,6 @@ If you already know which indicator you want to calculate, you have several opti
 - Download all scripts by clicking on the green "Code" icon, and then "Download ZIP"
 - If you have git installed on your local machine, you can clone this repository with
 
-test
-
     git clone https://github.com/boku-met/climaproof-scripts.git
   
 ## Step 2: Setting up the environment
