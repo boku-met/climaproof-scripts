@@ -89,6 +89,10 @@ def main():
           
     for file in infiles_pr:
         ds_in_pr = xr.open_dataset(file)
+        check_endyear = (ds_in_pr.time.dt.month == 12) & (ds_in_pr.time.dt.day == 30)
+        time_fullyear = ds_in_pr.time[check_endyear]
+        years = np.unique(time_fullyear.dt.year)
+        ds_in_pr = ds_in_pr.sel(time=slice(str(min(years)), str(max(years))))
         mask = xr.where(ds_in_pr.pr.isel(time=slice(0,60)).mean(dim="time", 
                                                                    skipna=True) 
                         >= -990, 1, np.nan).compute()
@@ -176,7 +180,7 @@ def main():
         
         # Encoding and compression
         encoding_dict = {"_FillValue":-32767, "dtype":np.int16, 'zlib': True,
-                         'shuffle': True,'complevel': 5, 'fletcher32': False, 
+                         'complevel': 1, 'fletcher32': False, 
                          'contiguous': False}
         
         cdd5.encoding = encoding_dict
@@ -186,7 +190,6 @@ def main():
                                 
         # Climatology variable
         climatology_attrs = {'long_name': 'time bounds', 'standard_name': 'time'}
-                
         climatology = xr.DataArray(np.stack((ds_in_pr.time[start_inds],
                                              ds_in_pr.time[end_inds]), 
                                                 axis=1), 

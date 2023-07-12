@@ -52,6 +52,10 @@ def main():
         chunkd = chunking_dict(file, ds_in)
         if chunkd:
             ds_in = ds_in.chunk(chunkd)
+        check_endyear = (ds_in.time.dt.month == 12) & (ds_in.time.dt.day == 30)
+        time_fullyear = ds_in.time[check_endyear]
+        years = np.unique(time_fullyear.dt.year)
+        ds_in = ds_in.sel(time=slice(str(min(years)), str(max(years))))
         mask = xr.where(ds_in.tasmax.isel(time=slice(0,60)).mean(dim="time", 
                                                                    skipna=True) 
                         >= -990, 1, np.nan).compute()
@@ -81,28 +85,24 @@ def main():
         hd40_month.attrs = attr_dict
         hd30_month.attrs["long_name"] = hd30_month.attrs["long_name"].replace("threshold", "30 degC")
         hd40_month.attrs["long_name"] = hd40_month.attrs["long_name"].replace("threshold", "40 degC")
-        # Workaround for special calendars:
-        try:
-            hd30_month.coords["time"] = ds_in.time[ds_in.time.dt.is_month_end]
-            hd40_month.coords["time"] = ds_in.time[ds_in.time.dt.is_month_end]
-        except AttributeError:
-            time_resampled = ds_in.time.resample(time="M")
-            start_inds = np.array([x.start for x in time_resampled.groups.values()])
-            end_inds = np.array([x.stop for x in time_resampled.groups.values()])
-            end_inds[-1] = ds_in.time.size
-            end_inds -= 1
-            start_inds = start_inds.astype(np.int32)
-            end_inds = end_inds.astype(np.int32)
-            
-            hd30_month.coords["time"] = ds_in.time[end_inds]
-            hd40_month.coords["time"] = ds_in.time[end_inds]
+        
+        time_resampled = ds_in.time.resample(time="M")
+        start_inds = np.array([x.start for x in time_resampled.groups.values()])
+        end_inds = np.array([x.stop for x in time_resampled.groups.values()])
+        end_inds[-1] = ds_in.time.size
+        end_inds -= 1
+        start_inds = start_inds.astype(np.int32)
+        end_inds = end_inds.astype(np.int32)
+        
+        hd30_month.coords["time"] = ds_in.time[end_inds]
+        hd40_month.coords["time"] = ds_in.time[end_inds]
                         
         hd30_month.time.attrs.update({"climatology":"climatology_bounds"})
         hd40_month.time.attrs.update({"climatology":"climatology_bounds"})
             
         # Encoding and compression
         encoding_dict = {"_FillValue":-32767, "dtype":np.int16, 'zlib': True,
-                         'shuffle': True,'complevel': 5, 'fletcher32': False, 
+                         'complevel': 1, 'fletcher32': False, 
                          'contiguous': False}
         
         hd30_month.encoding = encoding_dict
@@ -110,23 +110,13 @@ def main():
         
         # Climatology variable
         climatology_attrs = {'long_name': 'time bounds', 'standard_name': 'time'}
-        # Workaround for special calendars:
-        try:
-            climatology = xr.DataArray(np.stack((ds_in.time[ds_in.time.dt.is_month_start],
-                                                 ds_in.time[ds_in.time.dt.is_month_end]), 
-                                                axis=1), 
-                                       coords={"time": hd30_month.time, 
-                                               "nv": np.arange(2, dtype=np.int16)},
-                                       dims = ["time","nv"], 
-                                       attrs=climatology_attrs)
-        except AttributeError:
-            climatology = xr.DataArray(np.stack((ds_in.time[start_inds],
-                                                 ds_in.time[end_inds]), 
-                                                axis=1), 
-                                       coords={"time": hd30_month.time, 
-                                               "nv": np.arange(2, dtype=np.int16)},
-                                       dims = ["time","nv"], 
-                                       attrs=climatology_attrs)
+        climatology = xr.DataArray(np.stack((ds_in.time[start_inds],
+                                                ds_in.time[end_inds]), 
+                                            axis=1), 
+                                    coords={"time": hd30_month.time, 
+                                            "nv": np.arange(2, dtype=np.int16)},
+                                    dims = ["time","nv"], 
+                                    attrs=climatology_attrs)
             
         climatology.encoding.update({"dtype":np.float64,'units': ds_in.time.encoding['units'],
                                      'calendar': ds_in.time.encoding['calendar']})

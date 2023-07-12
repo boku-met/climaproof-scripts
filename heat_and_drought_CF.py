@@ -98,7 +98,11 @@ def main():
                 ds_in_tmax = xr.open_dataset(infiles_tmax[j])
                 ds_in_pr = xr.open_dataset(infiles_pr[k])
                 assert(ds_in_tmax.sizes == ds_in_pr.sizes)
-                
+                check_endyear = (ds_in_pr.time.dt.month == 12) & (ds_in_pr.time.dt.day == 30)
+                time_fullyear = ds_in_pr.time[check_endyear]
+                years = np.unique(time_fullyear.dt.year)
+                ds_in_pr = ds_in_pr.sel(time=slice(str(min(years)), str(max(years))))
+                ds_in_tmax = ds_in_tmax.sel(time=slice(str(min(years)), str(max(years))))
                 mask = xr.where(ds_in_pr.pr.isel(time=slice(0,60)).mean(dim="time", 
                                                                            skipna=True) 
                                 >= -990, 1, np.nan).compute()
@@ -160,28 +164,24 @@ def main():
                                 "standard_name": cdd7.attrs["standard_name"].replace("zz",
                                 "number_of_days_with_precipitation_amount_below_threshold")})
                 
-                try:
-                    cdd5.coords["time"] = ds_in_pr.time[ds_in_pr.time.dt.is_year_end]
-                    cdd7.coords["time"] = ds_in_pr.time[ds_in_pr.time.dt.is_year_end]
-                    
-                except AttributeError:
-                    time_resampled = ds_in_pr.time.resample(time="A")
-                    start_inds = np.array([x.start for x in time_resampled.groups.values()])
-                    end_inds = np.array([x.stop for x in time_resampled.groups.values()])
-                    end_inds[-1] = ds_in_pr.time.size
-                    end_inds -= 1
-                    start_inds = start_inds.astype(np.int32)
-                    end_inds = end_inds.astype(np.int32)
-                    
-                    cdd5.coords["time"] = ds_in_pr.time[end_inds]
-                    cdd7.coords["time"] = ds_in_pr.time[end_inds]
+                
+                time_resampled = ds_in_pr.time.resample(time="A")
+                start_inds = np.array([x.start for x in time_resampled.groups.values()])
+                end_inds = np.array([x.stop for x in time_resampled.groups.values()])
+                end_inds[-1] = ds_in_pr.time.size
+                end_inds -= 1
+                start_inds = start_inds.astype(np.int32)
+                end_inds = end_inds.astype(np.int32)
+                
+                cdd5.coords["time"] = ds_in_pr.time[end_inds]
+                cdd7.coords["time"] = ds_in_pr.time[end_inds]
                                
                 cdd5.time.attrs.update({"climatology":"climatology_bounds"})
                 cdd7.time.attrs.update({"climatology":"climatology_bounds"})
                         
                 # Encoding and compression
                 encoding_dict = {"_FillValue":-32767, "dtype":np.int16, 'zlib': True,
-                                 'shuffle': True,'complevel': 5, 'fletcher32': False, 
+                                 'complevel': 1, 'fletcher32': False, 
                                  'contiguous': False}
                 
                 cdd5.encoding = encoding_dict
@@ -189,23 +189,13 @@ def main():
                                                 
                 # Climatology variable
                 climatology_attrs = {'long_name': 'time bounds', 'standard_name': 'time'}
-                        
-                try:
-                    climatology = xr.DataArray(np.stack((ds_in_pr.time[ds_in_pr.time.dt.is_year_start],
-                                                         ds_in_pr.time[ds_in_pr.time.dt.is_year_end]), 
-                                                        axis=1), 
-                                               coords={"time": cdd5.time, 
-                                                       "nv": np.arange(2, dtype=np.int16)},
-                                               dims = ["time","nv"], 
-                                               attrs=climatology_attrs)
-                except AttributeError:
-                    climatology = xr.DataArray(np.stack((ds_in_pr.time[start_inds],
-                                                         ds_in_pr.time[end_inds]), 
-                                                        axis=1), 
-                                               coords={"time": cdd5.time, 
-                                                       "nv": np.arange(2, dtype=np.int16)},
-                                               dims = ["time","nv"], 
-                                               attrs=climatology_attrs)
+                climatology = xr.DataArray(np.stack((ds_in_pr.time[start_inds],
+                                                        ds_in_pr.time[end_inds]), 
+                                                    axis=1), 
+                                            coords={"time": cdd5.time, 
+                                                    "nv": np.arange(2, dtype=np.int16)},
+                                            dims = ["time","nv"], 
+                                            attrs=climatology_attrs)
                             
                 climatology.encoding.update({"dtype":np.float64,'units': ds_in_pr.time.encoding['units'],
                                              'calendar': ds_in_pr.time.encoding['calendar']})

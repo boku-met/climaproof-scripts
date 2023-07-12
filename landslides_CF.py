@@ -57,6 +57,11 @@ def main():
         chunkd = chunking_dict(file, ds_in_pr)
         if chunkd:
             ds_in_pr = ds_in_pr.chunk(chunkd)
+        
+        check_endyear = (ds_in_pr.time.dt.month == 12) & (ds_in_pr.time.dt.day == 30)
+        time_fullyear = ds_in_pr.time[check_endyear]
+        years = np.unique(time_fullyear.dt.year)
+        ds_in_pr = ds_in_pr.sel(time=slice(str(min(years)), str(max(years))))
         mask = xr.where(ds_in_pr.pr.isel(time=slice(0,60)).mean(dim="time", 
                                                                    skipna=True) 
                         >= -990, 1, np.nan).compute()
@@ -66,16 +71,19 @@ def main():
         mth24 = moser_threshold(24)
         mth48 = moser_threshold(48)
         mth72 = moser_threshold(72)
-        
-        pr_2day = ds_in_pr.pr.rolling(time=2, min_periods=2, center=False).sum().compute()
-        pr_3day = ds_in_pr.pr.rolling(time=3, min_periods=3, center=False).sum().compute()
-        
-        cond_1d = xr.where(ds_in_pr.pr > mth24, 1, 0)
-        cond_2d = xr.where(pr_2day > mth48, 1, 0)
-        cond_3d = xr.where(pr_3day > mth72, 1, 0)
+
+        cond_1d = xr.where(ds_in_pr.pr > mth24, True, False)
+        cur_pr = xr.where(cond_1d, 0, ds_in_pr.pr)
+
+        pr_2day = cur_pr.rolling(time=2, min_periods=2, center=False).sum().compute()
+        cond_2d = xr.where(pr_2day > mth48, True, False)
+        cur_pr = xr.where(cond_2d, 0, cur_pr)
+
+        pr_3day = cur_pr.rolling(time=3, min_periods=3, center=False).sum().compute()
+        cond_3d = xr.where(pr_3day > mth72, True, False)
         
         cond_sum = (cond_1d + cond_2d + cond_3d).compute()
-        cond_tot = xr.where(cond_sum >=1, 1, 0).compute()
+        cond_tot = xr.where(cond_sum >=1, 1, 0).compute()        
         
         moser_exceed = cond_tot.resample(time = "A", skipna=True).sum().compute()
         moser_exceed = (moser_exceed * mask).compute()
@@ -96,42 +104,28 @@ def main():
             
         moser_exceed.attrs = attr_dict
         
-        # Workaround for special calendars:
-        try:
-            moser_exceed.coords["time"] = ds_in_pr.time[ds_in_pr.time.dt.is_year_end]
-        except AttributeError:
-            time_resampled = ds_in_pr.time.resample(time="A")
-            start_inds = np.array([x.start for x in time_resampled.groups.values()])
-            end_inds = np.array([x.stop for x in time_resampled.groups.values()])
-            end_inds[-1] = ds_in_pr.time.size
-            end_inds -= 1
-            start_inds = start_inds.astype(np.int32)
-            end_inds = end_inds.astype(np.int32)
+        time_resampled = ds_in_pr.time.resample(time="A")
+        start_inds = np.array([x.start for x in time_resampled.groups.values()])
+        end_inds = np.array([x.stop for x in time_resampled.groups.values()])
+        end_inds[-1] = ds_in_pr.time.size
+        end_inds -= 1
+        start_inds = start_inds.astype(np.int32)
+        end_inds = end_inds.astype(np.int32)
             
-            moser_exceed.coords["time"] = ds_in_pr.time[end_inds]
+        moser_exceed.coords["time"] = ds_in_pr.time[end_inds]
                                                 
         moser_exceed.time.attrs.update({"climatology":"climatology_bounds"})
         
         # Encoding and compression
         encoding_dict = {"_FillValue":-32767, "dtype":np.int16, 'zlib': True,
-                         'shuffle': True,'complevel': 5, 'fletcher32': False, 
+                         'complevel': 1, 'fletcher32': False, 
                          'contiguous': False}
         
         moser_exceed.encoding = encoding_dict
                                 
         # Climatology variable
         climatology_attrs = {'long_name': 'time bounds', 'standard_name': 'time'}
-        # Workaround for special calendars:
-        try:
-            climatology = xr.DataArray(np.stack((ds_in_pr.time[ds_in_pr.time.dt.is_year_start],
-                                                 ds_in_pr.time[ds_in_pr.time.dt.is_year_end]), 
-                                                axis=1), 
-                                       coords={"time": moser_exceed.time, 
-                                               "nv": np.arange(2, dtype=np.int16)},
-                                       dims = ["time","nv"], 
-                                       attrs=climatology_attrs)
-        except AttributeError:
-            climatology = xr.DataArray(np.stack((ds_in_pr.time[start_inds],
+        climatology = xr.DataArray(np.stack((ds_in_pr.time[start_inds],
                                                  ds_in_pr.time[end_inds]), 
                                                 axis=1), 
                                        coords={"time": moser_exceed.time, 

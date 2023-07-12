@@ -35,20 +35,6 @@ def user_data():
                   
     return path_to_data, output_path, type_of_data, parallel_jobs
 
-def chunking_dict(filename, ds_in):
-    chunkdict = None
-    fsize = os.stat(filename).st_size / 1000000
-    bsize = (fsize / ds_in.time.size) * (365*30)
-    if bsize > 200:
-        chunk_div = bsize / 100
-        for name in ds_in.sizes:
-            if ds_in.sizes[name] == min(ds_in.pr.shape):
-                x = (name if not "time" in name else "lat")
-        chunkdict = {"time":-1, x: int(round(ds_in[x].size / chunk_div))}
-        if chunkdict[x] == 0:
-            chunkdict[x] = 1
-    return chunkdict
-
 def main():
     (path_in, path_out, datype, njobs) = user_data()
     
@@ -60,14 +46,18 @@ def main():
           
     for file in infiles_pr:
         ds_in_pr = xr.open_dataset(file)
-        chdict = chunking_dict(file, ds_in_pr)
+        check_endyear = (ds_in_pr.time.dt.month == 12) & (ds_in_pr.time.dt.day == 30)
+        time_fullyear = ds_in_pr.time[check_endyear]
+        years = np.unique(time_fullyear.dt.year)
+        ds_in_pr = ds_in_pr.sel(time=slice(str(min(years)), str(max(years))))
+
         mask = xr.where(ds_in_pr.pr.isel(time=slice(0,60)).mean(dim="time", 
                                                                    skipna=True) 
                         >= -990, 1, np.nan).compute()
         print("*** Loading dataset {0} complete. Mask created.".format(file))
         
-        min_year = ds_in_pr.time.dt.year.min().values
-        max_year = ds_in_pr.time.dt.year.max().values
+        min_year = min(years)
+        max_year = max(years)
         if max_year - min_year < 29:
             print("Dataset {0} needs at least 30 years of data. Exiting.".format(file))
             exit()
@@ -76,26 +66,18 @@ def main():
         annual_ind = np.logical_and(ds_in_pr.time.dt.month == 7, ds_in_pr.time.dt.day == 15)
         pr_meta = xr.zeros_like(ds_in_pr.pr[annual_ind,:,:])
         pr_meta = pr_meta.sel(time=slice(str(endyrs.min()),str(endyrs.max())))
-        
+                
         # Calculate indicator with parallel processing
-        if chdict:
-            i = 0
-            for sy, ey in zip(startyrs, endyrs):
-                pr_cur = ds_in_pr.pr.sel(time=slice(str(sy),str(ey))).chunk(chdict)
-                pr_quant = pr_cur.quantile(0.999, dim="time", interpolation="linear", skipna=True).compute()
-                pr_meta[i,:,:] = pr_quant
-                i += 1
-        else:
-            def parallel_loop(sy, ey):
-                pr_cur = ds_in_pr.pr.sel(time=slice(str(sy),str(ey)))
-                pr_quant = pr_cur.quantile(0.999, dim="time", interpolation="linear", skipna=True).compute()
-                return pr_quant
+        def parallel_loop(sy, ey):
+            pr_cur = ds_in_pr.pr.sel(time=slice(str(sy),str(ey)))
+            pr_quant = pr_cur.quantile(0.999, dim="time", interpolation="linear", skipna=True).compute()
+            return pr_quant
             
-            parallel_results = Parallel(n_jobs=njobs)(delayed(parallel_loop)
-                                                      (sy, ey) for sy, ey in 
-                                                      zip(startyrs, endyrs))
-            for i in range(pr_meta.time.size):
-                pr_meta[i,:,:] = parallel_results[i]
+        parallel_results = Parallel(n_jobs=njobs)(delayed(parallel_loop)
+                                                    (sy, ey) for sy, ey in 
+                                                    zip(startyrs, endyrs))
+        for i in range(pr_meta.time.size):
+            pr_meta[i,:,:] = parallel_results[i]
           
         pr_meta = (pr_meta * mask).compute()
                         
@@ -130,7 +112,7 @@ def main():
         
         # Encoding and compression
         encoding_dict = {"_FillValue":9.96921e+36, "dtype":np.float32, 'zlib': True,
-                         'shuffle': True,'complevel': 5, 'fletcher32': False, 
+                         'complevel': 1, 'fletcher32': False, 
                          'contiguous': False}
         
         pr_meta.encoding = encoding_dict

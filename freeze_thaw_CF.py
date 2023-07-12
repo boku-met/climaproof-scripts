@@ -26,7 +26,7 @@ def user_data():
     output_path = ""
     
     #Please select option: 'observation' or 'model'
-    type_of_data = "" 
+    type_of_data = ""
           
     return path_to_data, output_path, type_of_data
 
@@ -63,7 +63,11 @@ def main():
                 if chunkd:
                     ds_in_tmax = ds_in_tmax.chunk(chunkd)
                     ds_in_tmin = ds_in_tmin.chunk(chunkd)
-                    
+                check_endyear = (ds_in_tmin.time.dt.month == 12) & (ds_in_tmin.time.dt.day == 30)
+                time_fullyear = ds_in_tmin.time[check_endyear]
+                years = np.unique(time_fullyear.dt.year)
+                ds_in_tmin = ds_in_tmin.sel(time=slice(str(min(years)), str(max(years))))
+                ds_in_tmax = ds_in_tmax.sel(time=slice(str(min(years)), str(max(years))))
                 mask = xr.where(ds_in_tmax.tasmax.isel(time=slice(0,60)).mean(dim="time", 
                                                                            skipna=True) 
                                 >= -990, 1, np.nan).compute()
@@ -94,49 +98,35 @@ def main():
                                 "units": "1"}
                     
                 fr_th_days.attrs = attr_dict
+               
+                time_resampled = ds_in_tmax.time.resample(time="M")
+                start_inds = np.array([x.start for x in time_resampled.groups.values()])
+                end_inds = np.array([x.stop for x in time_resampled.groups.values()])
+                end_inds[-1] = ds_in_tmax.time.size
+                end_inds -= 1
+                start_inds = start_inds.astype(np.int32)
+                end_inds = end_inds.astype(np.int32)
                 
-                # Workaround for special calendars:
-                try:
-                    fr_th_days.coords["time"] = ds_in_tmax.time[ds_in_tmax.time.dt.is_month_end]
-                except AttributeError:
-                    time_resampled = ds_in_tmax.time.resample(time="M")
-                    start_inds = np.array([x.start for x in time_resampled.groups.values()])
-                    end_inds = np.array([x.stop for x in time_resampled.groups.values()])
-                    end_inds[-1] = ds_in_tmax.time.size
-                    end_inds -= 1
-                    start_inds = start_inds.astype(np.int32)
-                    end_inds = end_inds.astype(np.int32)
-                    
-                    fr_th_days.coords["time"] = ds_in_tmax.time[end_inds]
+                fr_th_days.coords["time"] = ds_in_tmax.time[end_inds]
                                                     
                 fr_th_days.time.attrs.update({"climatology":"climatology_bounds"})
                                     
                 # Encoding and compression
                 encoding_dict = {"_FillValue":-32767, "dtype":np.int16, 'zlib': True,
-                                 'shuffle': True,'complevel': 5, 'fletcher32': False, 
+                                 'complevel': 1, 'fletcher32': False, 
                                  'contiguous': False}
                 
                 fr_th_days.encoding = encoding_dict
                                 
                 # Climatology variable
                 climatology_attrs = {'long_name': 'time bounds', 'standard_name': 'time'}
-                # Workaround for special calendars:
-                try:
-                    climatology = xr.DataArray(np.stack((ds_in_tmax.time[ds_in_tmax.time.dt.is_month_start],
-                                                         ds_in_tmax.time[ds_in_tmax.time.dt.is_month_end]), 
-                                                        axis=1), 
-                                               coords={"time": fr_th_days.time, 
-                                                       "nv": np.arange(2, dtype=np.int16)},
-                                               dims = ["time","nv"], 
-                                               attrs=climatology_attrs)
-                except AttributeError:
-                    climatology = xr.DataArray(np.stack((ds_in_tmax.time[start_inds],
-                                                         ds_in_tmax.time[end_inds]), 
-                                                        axis=1), 
-                                               coords={"time": fr_th_days.time, 
-                                                       "nv": np.arange(2, dtype=np.int16)},
-                                               dims = ["time","nv"], 
-                                               attrs=climatology_attrs)
+                climatology = xr.DataArray(np.stack((ds_in_tmax.time[start_inds],
+                                                        ds_in_tmax.time[end_inds]), 
+                                                    axis=1), 
+                                            coords={"time": fr_th_days.time, 
+                                                    "nv": np.arange(2, dtype=np.int16)},
+                                            dims = ["time","nv"], 
+                                            attrs=climatology_attrs)
                     
                 climatology.encoding.update({"dtype":np.float64,'units': ds_in_tmax.time.encoding['units'],
                                              'calendar': ds_in_tmax.time.encoding['calendar']})

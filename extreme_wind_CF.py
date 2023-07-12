@@ -60,14 +60,13 @@ def main():
           
     for file in infiles_wind:
         ds_in_wind = xr.open_dataset(file)
-        if ds_in_wind.time[-1].dt.month.values == 12:
-            None
-        else:
-            years = np.unique(ds_in_wind.time.dt.year)
-            ds_in_wind = ds_in_wind.sel(time=slice(str(years.min()), str((years.max()-1))))
         chunkd = chunking_dict(file, ds_in_wind)
         if chunkd:
             ds_in_wind = ds_in_wind.chunk(chunkd)
+        check_endyear = (ds_in_wind.time.dt.month == 12) & (ds_in_wind.time.dt.day == 30)
+        time_fullyear = ds_in_wind.time[check_endyear]
+        years = np.unique(time_fullyear.dt.year)
+        ds_in_wind = ds_in_wind.sel(time=slice(str(min(years)), str(max(years))))
         mask = xr.where(ds_in_wind.sfcWind.isel(time=slice(0,60)).mean(dim="time", 
                                                                    skipna=True) 
                         >= -990, 1, np.nan).compute()
@@ -95,48 +94,34 @@ def main():
             
         extreme_wind.attrs = attr_dict
         
-        # Workaround for special calendars:
-        try:
-            extreme_wind.coords["time"] = ds_in_wind.time[ds_in_wind.time.dt.is_year_end]
-        except AttributeError:
-            time_resampled = ds_in_wind.time.resample(time="A")
-            start_inds = np.array([x.start for x in time_resampled.groups.values()])
-            end_inds = np.array([x.stop for x in time_resampled.groups.values()])
-            end_inds[-1] = ds_in_wind.time.size
-            end_inds -= 1
-            start_inds = start_inds.astype(np.int32)
-            end_inds = end_inds.astype(np.int32)
+        time_resampled = ds_in_wind.time.resample(time="A")
+        start_inds = np.array([x.start for x in time_resampled.groups.values()])
+        end_inds = np.array([x.stop for x in time_resampled.groups.values()])
+        end_inds[-1] = ds_in_wind.time.size
+        end_inds -= 1
+        start_inds = start_inds.astype(np.int32)
+        end_inds = end_inds.astype(np.int32)
             
-            extreme_wind.coords["time"] = ds_in_wind.time[end_inds]
+        extreme_wind.coords["time"] = ds_in_wind.time[end_inds]
                                                 
         extreme_wind.time.attrs.update({"climatology":"climatology_bounds"})
         
         # Encoding and compression
         encoding_dict = {"_FillValue":-32767, "dtype":np.int16, 'zlib': True,
-                         'shuffle': True,'complevel': 5, 'fletcher32': False, 
+                         'complevel': 1, 'fletcher32': False, 
                          'contiguous': False}
         
         extreme_wind.encoding = encoding_dict
                                 
         # Climatology variable
         climatology_attrs = {'long_name': 'time bounds', 'standard_name': 'time'}
-        # Workaround for special calendars:
-        try:
-            climatology = xr.DataArray(np.stack((ds_in_wind.time[ds_in_wind.time.dt.is_year_start],
-                                                 ds_in_wind.time[ds_in_wind.time.dt.is_year_end]), 
-                                                axis=1), 
-                                       coords={"time": extreme_wind.time, 
-                                               "nv": np.arange(2, dtype=np.int16)},
-                                       dims = ["time","nv"], 
-                                       attrs=climatology_attrs)
-        except AttributeError:
-            climatology = xr.DataArray(np.stack((ds_in_wind.time[start_inds],
-                                                 ds_in_wind.time[end_inds]), 
-                                                axis=1), 
-                                       coords={"time": extreme_wind.time, 
-                                               "nv": np.arange(2, dtype=np.int16)},
-                                       dims = ["time","nv"], 
-                                       attrs=climatology_attrs)
+        climatology = xr.DataArray(np.stack((ds_in_wind.time[start_inds],
+                                                ds_in_wind.time[end_inds]), 
+                                            axis=1), 
+                                    coords={"time": extreme_wind.time, 
+                                            "nv": np.arange(2, dtype=np.int16)},
+                                    dims = ["time","nv"], 
+                                    attrs=climatology_attrs)
             
         climatology.encoding.update({"dtype":np.float64,'units': ds_in_wind.time.encoding['units'],
                                      'calendar': ds_in_wind.time.encoding['calendar']})
