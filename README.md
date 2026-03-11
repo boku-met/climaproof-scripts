@@ -8,7 +8,7 @@ In this repository (https://github.com/boku-met/climaproof-scripts) you can find
 
 All climate indicators have been published for all available climate scenarios of the entire Western Balkan region:
 
-https://data.ccca.ac.at/group/ec12144b-a8f1-40bc-9297-931bcfd01b5a?groups=ci
+https://data.hub.geosphere.at/group/climaproof
 
 So there is only reason to use these scripts if you have customised the climate scenarios by improving data resolution (downscaling tool) and/or data quality with observations (ICC-OBS tool).  
 
